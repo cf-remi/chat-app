@@ -67,6 +67,21 @@ export const deleteChannel = (serverId, channelId) =>
 export const deleteServer = (serverId) =>
   api(`/api/servers/${serverId}`, { method: "DELETE" });
 
+// Push notifications
+export const getVapidKey = () => api("/api/push/vapid-key");
+
+export const subscribePush = (subscription) =>
+  api("/api/push/subscribe", {
+    method: "POST",
+    body: JSON.stringify(subscription),
+  });
+
+export const unsubscribePush = (endpoint) =>
+  api("/api/push/unsubscribe", {
+    method: "POST",
+    body: JSON.stringify({ endpoint }),
+  });
+
 // RealtimeKit (voice)
 export const joinVoiceRoom = (channelId) =>
   api("/api/rooms/join", {

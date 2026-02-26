@@ -6,6 +6,7 @@ import {
 import { useAuth } from "./context/AuthContext.jsx";
 import { useAppContext } from "./context/AppContext.jsx";
 import { joinVoiceRoom } from "./api.js";
+import { usePushNotifications } from "./hooks/usePushNotifications.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import Sidebar from "./components/Sidebar.jsx";
 import ChatArea from "./components/ChatArea.jsx";
@@ -20,6 +21,7 @@ export default function App() {
     selectChannel,
   } = useAppContext();
 
+  usePushNotifications(user);
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [meetingKey, setMeetingKey] = useState(0);
   const [error, setError] = useState(null);

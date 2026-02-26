@@ -1,4 +1,5 @@
-import type { ChatMessage } from "../types.js";
+import type { ChatMessage, Env } from "../types.js";
+import { sendPushNotification } from "../push/webpush.js";
 
 const MAX_STORED_MESSAGES = 500;
 
@@ -10,10 +11,12 @@ interface Session {
 
 export class ChatRoom implements DurableObject {
   private state: DurableObjectState;
+  private env: Env;
   private sessions: Session[] = [];
 
-  constructor(state: DurableObjectState) {
+  constructor(state: DurableObjectState, env: Env) {
     this.state = state;
+    this.env = env;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -89,6 +92,9 @@ export class ChatRoom implements DurableObject {
             JSON.stringify({ type: "message", message: msg }),
             null
           );
+
+          // Send push notifications to offline members (fire-and-forget)
+          this.sendPushToOfflineMembers(msg).catch(() => {});
         }
       } catch (err) {
         webSocket.send(
@@ -131,6 +137,71 @@ export class ChatRoom implements DurableObject {
   private async getMessages(): Promise<ChatMessage[]> {
     const stored = await this.state.storage.get<ChatMessage[]>("messages");
     return stored || [];
+  }
+
+  private async sendPushToOfflineMembers(msg: ChatMessage) {
+    if (!msg.channelId) return;
+
+    // Get the server_id for this channel
+    const channel = await this.env.DB.prepare(
+      "SELECT server_id FROM channels WHERE id = ?"
+    )
+      .bind(msg.channelId)
+      .first<{ server_id: string }>();
+
+    if (!channel) return;
+
+    // Get currently connected user IDs
+    const onlineUserIds = new Set(this.sessions.map((s) => s.userId));
+
+    // Get push subscriptions for server members who are NOT online
+    const placeholders = onlineUserIds.size > 0
+      ? ` AND ps.user_id NOT IN (${[...onlineUserIds].map(() => "?").join(",")})`
+      : "";
+
+    const binds = [channel.server_id, ...(onlineUserIds.size > 0 ? [...onlineUserIds] : [])];
+
+    const { results } = await this.env.DB.prepare(
+      `SELECT ps.endpoint, ps.p256dh, ps.auth, ps.id
+       FROM push_subscriptions ps
+       JOIN server_members sm ON sm.user_id = ps.user_id AND sm.server_id = ?
+       WHERE ps.user_id != ?${placeholders}`
+    )
+      .bind(...[channel.server_id, msg.userId, ...binds.slice(1)])
+      .all<{ endpoint: string; p256dh: string; auth: string; id: string }>();
+
+    if (!results?.length) return;
+
+    const payload = {
+      title: `${msg.username}`,
+      body: msg.content.length > 100 ? msg.content.slice(0, 100) + "..." : msg.content,
+      tag: `channel-${msg.channelId}`,
+      url: "/",
+      channelId: msg.channelId,
+    };
+
+    const expiredIds: string[] = [];
+
+    await Promise.allSettled(
+      results.map(async (sub) => {
+        const ok = await sendPushNotification(
+          { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
+          payload,
+          this.env.VAPID_PUBLIC_KEY,
+          this.env.VAPID_PRIVATE_KEY
+        );
+        if (!ok) expiredIds.push(sub.id);
+      })
+    );
+
+    // Clean up expired subscriptions
+    if (expiredIds.length > 0) {
+      await Promise.allSettled(
+        expiredIds.map((id) =>
+          this.env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?").bind(id).run()
+        )
+      );
+    }
   }
 
   private async storeMessage(msg: ChatMessage) {

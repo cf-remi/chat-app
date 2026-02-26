@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import auth from "./auth/router.js";
 import channels from "./channels/router.js";
 import rtk from "./rtk/router.js";
+import push from "./push/router.js";
 import { verifyToken } from "./auth/jwt.js";
 import { getCookie } from "hono/cookie";
 import type { Env } from "./types.js";
@@ -39,6 +40,9 @@ app.route("/api", channels);
 
 // RealtimeKit proxy (authenticated)
 app.route("/api", rtk);
+
+// Push notification routes (authenticated)
+app.route("/api", push);
 
 // WebSocket upgrade for chat — route to ChatRoom Durable Object
 app.get("/chat/:channelId", async (c) => {

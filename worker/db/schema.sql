@@ -33,3 +33,12 @@ CREATE TABLE IF NOT EXISTS server_members (
   joined_at  INTEGER DEFAULT (unixepoch()),
   PRIMARY KEY (server_id, user_id)
 );
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint   TEXT NOT NULL UNIQUE,
+  p256dh     TEXT NOT NULL,
+  auth       TEXT NOT NULL,
+  created_at INTEGER DEFAULT (unixepoch())
+);

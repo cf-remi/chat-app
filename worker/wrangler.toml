@@ -29,9 +29,11 @@ database_id = "056c32c5-3e6d-4375-92aa-4226275f0c97"
 
 [vars]
 RTK_PRESET_NAME = "group_call_host"
+VAPID_PUBLIC_KEY = "BJJq8hMz6WQxmMxspUy_fZLEIOJ--VSnEjQo3jLs9y9nTedhQfSmTs5tkSIvFf03lBHbFTBaIga14EfWGH04SF8"
 
 # Secrets (set via `wrangler secret put <NAME>`):
 # JWT_SECRET
 # CF_API_TOKEN
 # CF_ACCOUNT_ID
 # CF_APP_ID
+# VAPID_PRIVATE_KEY
