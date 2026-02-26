@@ -48,5 +48,15 @@ export async function verifyPassword(
 ): Promise<boolean> {
   const salt = hexToBuf(storedSalt);
   const derived = await deriveKey(password, salt);
-  return bufToHex(derived) === storedHash;
+  const derivedBuf = new Uint8Array(derived);
+  const storedBuf = new Uint8Array(hexToBuf(storedHash));
+
+  if (derivedBuf.length !== storedBuf.length) return false;
+
+  // Constant-time comparison
+  let diff = 0;
+  for (let i = 0; i < derivedBuf.length; i++) {
+    diff |= derivedBuf[i] ^ storedBuf[i];
+  }
+  return diff === 0;
 }

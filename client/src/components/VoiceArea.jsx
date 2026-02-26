@@ -78,15 +78,13 @@ export default function VoiceArea({ meeting }) {
     const handleScreenShareUpdate = (participant) => {
       if (participant.screenShareEnabled) {
         setScreenSharer(participant);
-      } else if (screenSharer?.id === participant.id) {
-        setScreenSharer(null);
+      } else {
+        setScreenSharer((prev) => (prev?.id === participant.id ? null : prev));
       }
     };
 
     const handleScreenShareEnded = (participant) => {
-      if (screenSharer?.id === participant.id) {
-        setScreenSharer(null);
-      }
+      setScreenSharer((prev) => (prev?.id === participant.id ? null : prev));
     };
 
     meeting.participants.joined.forEach((p) => {
@@ -103,7 +101,7 @@ export default function VoiceArea({ meeting }) {
       meeting.self?.off("screenShareUpdate", handleScreenShareUpdate);
       meeting.participants.joined.off("participantLeft", handleScreenShareEnded);
     };
-  }, [meeting, screenSharer]);
+  }, [meeting]);
 
   const handleLeave = async () => {
     try {

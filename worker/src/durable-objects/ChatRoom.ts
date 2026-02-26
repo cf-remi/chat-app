@@ -67,12 +67,19 @@ export class ChatRoom implements DurableObject {
         const data = JSON.parse(event.data as string);
 
         if (data.type === "message") {
+          if (typeof data.content !== "string" || !data.content.trim()) {
+            webSocket.send(JSON.stringify({ type: "error", message: "Message cannot be empty" }));
+            return;
+          }
+
+          const content = data.content.slice(0, 2000);
+
           const msg: ChatMessage = {
             id: crypto.randomUUID(),
             channelId: data.channelId || "",
             userId,
             username,
-            content: data.content,
+            content,
             timestamp: Date.now(),
           };
 

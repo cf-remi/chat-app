@@ -173,12 +173,16 @@ channels.post("/servers/:serverId/join", async (c) => {
   const userId = c.get("userId");
   const serverId = c.req.param("serverId");
 
-  const server = await c.env.DB.prepare("SELECT id FROM servers WHERE id = ?")
+  const server = await c.env.DB.prepare("SELECT id, is_public FROM servers WHERE id = ?")
     .bind(serverId)
-    .first();
+    .first<{ id: string; is_public: number }>();
 
   if (!server) {
     return c.json({ error: "Server not found" }, 404);
+  }
+
+  if (!server.is_public) {
+    return c.json({ error: "This server is private. Use an invite code to join." }, 403);
   }
 
   await c.env.DB.prepare(

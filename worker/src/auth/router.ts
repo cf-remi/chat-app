@@ -12,7 +12,7 @@ function cookieOpts(c: any, token: string) {
   return {
     httpOnly: true,
     secure: isSecure,
-    sameSite: isSecure ? "None" : "Lax",
+    sameSite: "Lax",
     path: "/",
     maxAge: token ? 60 * 60 * 24 * 7 : 0,
   } as const;

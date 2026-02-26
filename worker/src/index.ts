@@ -42,7 +42,7 @@ app.route("/api", rtk);
 
 // WebSocket upgrade for chat — route to ChatRoom Durable Object
 app.get("/chat/:channelId", async (c) => {
-  const token = getCookie(c, "token") || c.req.query("token");
+  const token = getCookie(c, "token");
 
   if (!token) {
     return c.json({ error: "Not authenticated" }, 401);
@@ -54,6 +54,19 @@ app.get("/chat/:channelId", async (c) => {
   }
 
   const channelId = c.req.param("channelId");
+
+  // Verify the user is a member of the server that owns this channel
+  const member = await c.env.DB.prepare(
+    `SELECT 1 FROM channels ch
+     JOIN server_members sm ON sm.server_id = ch.server_id AND sm.user_id = ?
+     WHERE ch.id = ?`
+  )
+    .bind(payload.sub, channelId)
+    .first();
+
+  if (!member) {
+    return c.json({ error: "Not a member of this server" }, 403);
+  }
 
   // Get the Durable Object for this channel
   const id = c.env.CHAT_ROOM.idFromName(channelId);
