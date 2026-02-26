@@ -68,4 +68,9 @@ app.get("/chat/:channelId", async (c) => {
   return stub.fetch(new Request(url.toString(), c.req.raw));
 });
 
+// Fallback: serve static assets for all other routes
+app.all("*", async (c) => {
+  return c.env.ASSETS.fetch(c.req.raw);
+});
+
 export default app;
