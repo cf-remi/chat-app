@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS server_members (
   PRIMARY KEY (server_id, user_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_channels_server_id ON channels(server_id);
+CREATE INDEX IF NOT EXISTS idx_servers_public ON servers(is_public) WHERE is_public = 1;
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -42,3 +46,5 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
   auth       TEXT NOT NULL,
   created_at INTEGER DEFAULT (unixepoch())
 );
+
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);

@@ -3,16 +3,26 @@ import { sendPushNotification } from "../push/webpush.js";
 
 const MAX_STORED_MESSAGES = 500;
 
-interface Session {
-  webSocket: WebSocket;
-  userId: string;
-  username: string;
+// Tags encode user metadata as "userId:username" so it survives hibernation
+function encodeTags(userId: string, username: string): string[] {
+  return [`${userId}:${username}`];
+}
+
+function decodeTags(ws: WebSocket): { userId: string; username: string } {
+  const tags = (ws as any).deserializeAttachment?.() ?? {};
+  // Tags are set via acceptWebSocket's second argument
+  const tagList: string[] = (ws as any).getTags?.() ?? [];
+  const tag = tagList[0] || "";
+  const idx = tag.indexOf(":");
+  return {
+    userId: idx > 0 ? tag.slice(0, idx) : "",
+    username: idx > 0 ? tag.slice(idx + 1) : "",
+  };
 }
 
 export class ChatRoom implements DurableObject {
   private state: DurableObjectState;
   private env: Env;
-  private sessions: Session[] = [];
 
   constructor(state: DurableObjectState, env: Env) {
     this.state = state;
@@ -37,7 +47,22 @@ export class ChatRoom implements DurableObject {
       const pair = new WebSocketPair();
       const [client, server] = Object.values(pair);
 
-      this.handleSession(server, userId, username);
+      // Use Hibernation API: tags survive hibernation cycles
+      this.state.acceptWebSocket(server, encodeTags(userId, username));
+
+      // Send message history to the new connection
+      const history = await this.getMessages();
+      server.send(JSON.stringify({ type: "history", messages: history }));
+
+      // Broadcast join notification
+      this.broadcast(
+        JSON.stringify({
+          type: "system",
+          message: `${username} joined the channel`,
+          timestamp: Date.now(),
+        }),
+        server
+      );
 
       return new Response(null, { status: 101, webSocket: client });
     }
@@ -45,67 +70,53 @@ export class ChatRoom implements DurableObject {
     return new Response("Not found", { status: 404 });
   }
 
-  private async handleSession(webSocket: WebSocket, userId: string, username: string) {
-    webSocket.accept();
+  // Called by the runtime when a hibernated DO receives a WebSocket message
+  async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer) {
+    try {
+      const raw = typeof message === "string" ? message : new TextDecoder().decode(message);
+      const data = JSON.parse(raw);
+      const { userId, username } = decodeTags(ws);
 
-    const session: Session = { webSocket, userId, username };
-    this.sessions.push(session);
-
-    // Send message history to the new connection
-    const history = await this.getMessages();
-    webSocket.send(JSON.stringify({ type: "history", messages: history }));
-
-    // Broadcast join notification
-    this.broadcast(
-      JSON.stringify({
-        type: "system",
-        message: `${username} joined the channel`,
-        timestamp: Date.now(),
-      }),
-      session
-    );
-
-    webSocket.addEventListener("message", async (event) => {
-      try {
-        const data = JSON.parse(event.data as string);
-
-        if (data.type === "message") {
-          if (typeof data.content !== "string" || !data.content.trim()) {
-            webSocket.send(JSON.stringify({ type: "error", message: "Message cannot be empty" }));
-            return;
-          }
-
-          const content = data.content.slice(0, 2000);
-
-          const msg: ChatMessage = {
-            id: crypto.randomUUID(),
-            channelId: data.channelId || "",
-            userId,
-            username,
-            content,
-            timestamp: Date.now(),
-          };
-
-          await this.storeMessage(msg);
-
-          this.broadcast(
-            JSON.stringify({ type: "message", message: msg }),
-            null
-          );
-
-          // Send push notifications to offline members (fire-and-forget)
-          this.sendPushToOfflineMembers(msg).catch(() => {});
+      if (data.type === "message") {
+        if (typeof data.content !== "string" || !data.content.trim()) {
+          ws.send(JSON.stringify({ type: "error", message: "Message cannot be empty" }));
+          return;
         }
-      } catch (err) {
-        webSocket.send(
-          JSON.stringify({ type: "error", message: "Invalid message format" })
+
+        const content = data.content.slice(0, 2000);
+
+        const msg: ChatMessage = {
+          id: crypto.randomUUID(),
+          channelId: data.channelId || "",
+          userId,
+          username,
+          content,
+          timestamp: Date.now(),
+        };
+
+        await this.storeMessage(msg);
+
+        this.broadcast(
+          JSON.stringify({ type: "message", message: msg }),
+          null
         );
+
+        // Send push notifications to offline members (fire-and-forget)
+        this.sendPushToOfflineMembers(msg).catch(() => {});
       }
-    });
+    } catch (err) {
+      ws.send(
+        JSON.stringify({ type: "error", message: "Invalid message format" })
+      );
+    }
+  }
 
-    webSocket.addEventListener("close", () => {
-      this.sessions = this.sessions.filter((s) => s !== session);
+  // Called by the runtime when a WebSocket connection closes
+  async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
+    const { username } = decodeTags(ws);
+    ws.close(code, "Durable Object is closing WebSocket");
 
+    if (username) {
       this.broadcast(
         JSON.stringify({
           type: "system",
@@ -114,24 +125,35 @@ export class ChatRoom implements DurableObject {
         }),
         null
       );
-    });
-
-    webSocket.addEventListener("error", () => {
-      this.sessions = this.sessions.filter((s) => s !== session);
-    });
+    }
   }
 
-  private broadcast(data: string, exclude: Session | null) {
-    this.sessions = this.sessions.filter((session) => {
+  // Called by the runtime on WebSocket error
+  async webSocketError(ws: WebSocket, error: unknown) {
+    ws.close(1011, "WebSocket error");
+  }
+
+  private broadcast(data: string, exclude: WebSocket | null) {
+    const sockets = this.state.getWebSockets();
+    for (const ws of sockets) {
       try {
-        if (session !== exclude) {
-          session.webSocket.send(data);
+        if (ws !== exclude) {
+          ws.send(data);
         }
-        return true;
       } catch {
-        return false;
+        // Socket is dead; runtime will clean it up
       }
-    });
+    }
+  }
+
+  private getOnlineUserIds(): Set<string> {
+    const sockets = this.state.getWebSockets();
+    const ids = new Set<string>();
+    for (const ws of sockets) {
+      const { userId } = decodeTags(ws);
+      if (userId) ids.add(userId);
+    }
+    return ids;
   }
 
   private async getMessages(): Promise<ChatMessage[]> {
@@ -152,7 +174,7 @@ export class ChatRoom implements DurableObject {
     if (!channel) return;
 
     // Get currently connected user IDs
-    const onlineUserIds = new Set(this.sessions.map((s) => s.userId));
+    const onlineUserIds = this.getOnlineUserIds();
 
     // Get push subscriptions for server members who are NOT online
     const placeholders = onlineUserIds.size > 0
