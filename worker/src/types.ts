@@ -1,6 +1,7 @@
 export interface Env {
   DB: D1Database;
   CHAT_ROOM: DurableObjectNamespace;
+  ASSETS: Fetcher;
   JWT_SECRET: string;
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;

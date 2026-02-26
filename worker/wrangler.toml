@@ -1,6 +1,17 @@
 name = "chat-app-worker"
 main = "src/index.ts"
 compatibility_date = "2025-12-01"
+workers_dev = false
+
+[assets]
+directory = "../client/dist"
+binding = "ASSETS"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[[routes]]
+pattern = "goodshab.com"
+custom_domain = true
 
 [durable_objects]
 bindings = [
@@ -14,7 +25,7 @@ new_classes = ["ChatRoom"]
 [[d1_databases]]
 binding = "DB"
 database_name = "chat-app"
-database_id = "aafd8094-53c1-4e8c-9212-2a4401e12287"
+database_id = "056c32c5-3e6d-4375-92aa-4226275f0c97"
 
 [vars]
 RTK_PRESET_NAME = "group_call_host"
