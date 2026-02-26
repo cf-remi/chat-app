@@ -11,10 +11,21 @@ export { ChatRoom } from "./durable-objects/ChatRoom.js";
 
 const app = new Hono<{ Bindings: Env }>();
 
+const ALLOWED_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:4173",
+  "https://chat-app.pages.dev",
+];
+
 app.use(
   "*",
   cors({
-    origin: (origin) => origin || "*",
+    origin: (origin) => {
+      if (!origin) return "";
+      if (ALLOWED_ORIGINS.includes(origin)) return origin;
+      if (origin.endsWith(".chat-app.pages.dev")) return origin;
+      return "";
+    },
     credentials: true,
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type"],

@@ -17,10 +17,10 @@ database_name = "chat-app"
 database_id = "aafd8094-53c1-4e8c-9212-2a4401e12287"
 
 [vars]
-JWT_SECRET = "d404e71eb1e36ac669f0c978290afbc5c4aa7d770e613b8e677ea086afdc2a1b"
 CF_ACCOUNT_ID = "f14987cb2f1db42ebfde241a23700328"
 CF_APP_ID = "66afeb2b-4106-4e35-9439-4ddbab4d829e"
 RTK_PRESET_NAME = "group_call_host"
 
-# CF_API_TOKEN should be set as a secret:
-# wrangler secret put CF_API_TOKEN
+# Secrets (set via `wrangler secret put <NAME>`):
+# JWT_SECRET
+# CF_API_TOKEN
