@@ -45,6 +45,28 @@ export const joinByInvite = (inviteCode) =>
     body: JSON.stringify({ inviteCode }),
   });
 
+// Admin actions
+export const regenerateInvite = (serverId) =>
+  api(`/api/servers/${serverId}/regenerate-invite`, { method: "POST" });
+
+export const revokeInvite = (serverId) =>
+  api(`/api/servers/${serverId}/revoke-invite`, { method: "POST" });
+
+export const kickMember = (serverId, targetUserId) =>
+  api(`/api/servers/${serverId}/kick`, {
+    method: "POST",
+    body: JSON.stringify({ targetUserId }),
+  });
+
+export const fetchMembers = (serverId) =>
+  api(`/api/servers/${serverId}/members`);
+
+export const deleteChannel = (serverId, channelId) =>
+  api(`/api/servers/${serverId}/channels/${channelId}`, { method: "DELETE" });
+
+export const deleteServer = (serverId) =>
+  api(`/api/servers/${serverId}`, { method: "DELETE" });
+
 // RealtimeKit (voice)
 export const joinVoiceRoom = (channelId) =>
   api("/api/rooms/join", {
