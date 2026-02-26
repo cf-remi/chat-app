@@ -1,4 +1,4 @@
-name = "discord-rtk-worker"
+name = "chat-app-worker"
 main = "src/index.ts"
 compatibility_date = "2025-12-01"
 
@@ -13,7 +13,7 @@ new_classes = ["ChatRoom"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "discord-rtk"
+database_name = "chat-app"
 database_id = "aafd8094-53c1-4e8c-9212-2a4401e12287"
 
 [vars]

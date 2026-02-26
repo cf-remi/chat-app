@@ -35,7 +35,7 @@ export default function LoginScreen() {
   return (
     <div className="login-screen">
       <form className="login-card" onSubmit={handleSubmit}>
-        <h1>Welcome to Discord RTK</h1>
+        <h1>Welcome to Chat App</h1>
         <p>{isRegister ? "Create an account" : "Log in to continue"}</p>
 
         {error && <div className="login-error">{error}</div>}
