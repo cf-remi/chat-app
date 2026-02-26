@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppContext } from "../context/AppContext.jsx";
 import { useAuth } from "../context/AuthContext.jsx";
 import {
   createServer,
+  createChannel,
   regenerateInvite,
   revokeInvite,
   kickMember,
@@ -12,7 +13,7 @@ import {
 } from "../api.js";
 import ServerBrowser from "./ServerBrowser.jsx";
 
-export default function Sidebar({ onJoinChannel }) {
+export default function Sidebar({ onJoinChannel, open, onClose }) {
   const {
     servers,
     activeServer,
@@ -30,6 +31,11 @@ export default function Sidebar({ onJoinChannel }) {
   const [newServerName, setNewServerName] = useState("");
   const [members, setMembers] = useState([]);
   const [adminError, setAdminError] = useState("");
+  // Channel creation
+  const [newChannelType, setNewChannelType] = useState(null); // "text" | "voice" | null
+  const [newChannelName, setNewChannelName] = useState("");
+  const [channelCreateError, setChannelCreateError] = useState("");
+  const channelInputRef = useRef(null);
 
   const isAdmin = activeServer?.role === "owner" || activeServer?.role === "admin";
   const isOwner = activeServer?.role === "owner";
@@ -116,8 +122,39 @@ export default function Sidebar({ onJoinChannel }) {
     }
   };
 
+  const openNewChannelForm = (type) => {
+    setNewChannelType(type);
+    setNewChannelName("");
+    setChannelCreateError("");
+    // Focus the input after render
+    setTimeout(() => channelInputRef.current?.focus(), 0);
+  };
+
+  const handleCreateChannel = async (e) => {
+    e.preventDefault();
+    const name = newChannelName.trim();
+    if (!name || !newChannelType || !activeServer) return;
+    setChannelCreateError("");
+    try {
+      await createChannel(activeServer.id, name, newChannelType);
+      await refreshChannels();
+      setNewChannelType(null);
+      setNewChannelName("");
+    } catch (err) {
+      setChannelCreateError(err.message);
+    }
+  };
+
+  const cancelNewChannel = () => {
+    setNewChannelType(null);
+    setNewChannelName("");
+    setChannelCreateError("");
+  };
+
   return (
-    <nav className="sidebar">
+    <>
+      {open && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
+    <nav className={`sidebar${open ? " sidebar--open" : ""}`}>
       {/* Server list */}
       <div className="server-list">
         {servers.map((s) => (
@@ -236,9 +273,40 @@ export default function Sidebar({ onJoinChannel }) {
               </div>
             )}
 
-            {textChannels.length > 0 && (
+            {(textChannels.length > 0 || (isAdmin && activeServer)) && (
               <div className="channel-group">
-                <div className="channel-group-title">Text Channels</div>
+                <div className="channel-group-title">
+                  Text Channels
+                  {isAdmin && activeServer && (
+                    <button
+                      className="channel-add-btn"
+                      onClick={() => openNewChannelForm("text")}
+                      title="New text channel"
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+                {newChannelType === "text" && (
+                  <form className="new-channel-form" onSubmit={handleCreateChannel}>
+                    <input
+                      ref={channelInputRef}
+                      type="text"
+                      placeholder="channel-name"
+                      value={newChannelName}
+                      onChange={(e) => setNewChannelName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Escape" && cancelNewChannel()}
+                      maxLength={32}
+                    />
+                    {channelCreateError && (
+                      <div className="new-channel-error">{channelCreateError}</div>
+                    )}
+                    <div className="new-channel-actions">
+                      <button type="submit" disabled={!newChannelName.trim()}>Create</button>
+                      <button type="button" onClick={cancelNewChannel}>Cancel</button>
+                    </div>
+                  </form>
+                )}
                 <ul className="channel-list">
                   {textChannels.map((ch) => (
                     <li
@@ -263,9 +331,40 @@ export default function Sidebar({ onJoinChannel }) {
               </div>
             )}
 
-            {voiceChannels.length > 0 && (
+            {(voiceChannels.length > 0 || (isAdmin && activeServer)) && (
               <div className="channel-group">
-                <div className="channel-group-title">Voice Channels</div>
+                <div className="channel-group-title">
+                  Voice Channels
+                  {isAdmin && activeServer && (
+                    <button
+                      className="channel-add-btn"
+                      onClick={() => openNewChannelForm("voice")}
+                      title="New voice channel"
+                    >
+                      +
+                    </button>
+                  )}
+                </div>
+                {newChannelType === "voice" && (
+                  <form className="new-channel-form" onSubmit={handleCreateChannel}>
+                    <input
+                      ref={channelInputRef}
+                      type="text"
+                      placeholder="channel-name"
+                      value={newChannelName}
+                      onChange={(e) => setNewChannelName(e.target.value)}
+                      onKeyDown={(e) => e.key === "Escape" && cancelNewChannel()}
+                      maxLength={32}
+                    />
+                    {channelCreateError && (
+                      <div className="new-channel-error">{channelCreateError}</div>
+                    )}
+                    <div className="new-channel-actions">
+                      <button type="submit" disabled={!newChannelName.trim()}>Create</button>
+                      <button type="button" onClick={cancelNewChannel}>Cancel</button>
+                    </div>
+                  </form>
+                )}
                 <ul className="channel-list">
                   {voiceChannels.map((ch) => (
                     <li
@@ -314,5 +413,6 @@ export default function Sidebar({ onJoinChannel }) {
         <ServerBrowser onClose={() => setShowBrowser(false)} />
       )}
     </nav>
+    </>
   );
 }

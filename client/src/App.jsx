@@ -1,11 +1,11 @@
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import {
   useRealtimeKitClient,
   RealtimeKitProvider,
 } from "@cloudflare/realtimekit-react";
 import { useAuth } from "./context/AuthContext.jsx";
 import { useAppContext } from "./context/AppContext.jsx";
-import { joinVoiceRoom } from "./api.js";
+import { joinVoiceRoom, fetchChannels } from "./api.js";
 import { usePushNotifications } from "./hooks/usePushNotifications.js";
 import LoginScreen from "./components/LoginScreen.jsx";
 import Sidebar from "./components/Sidebar.jsx";
@@ -19,9 +19,52 @@ export default function App() {
     isConnected,
     setIsConnected,
     selectChannel,
+    servers,
+    selectServer,
+    channels,
   } = useAppContext();
 
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
   usePushNotifications(user);
+
+  // Handle deep-link navigation from push notification clicks
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+
+    const handler = async (event) => {
+      if (event.data?.type !== "NOTIFICATION_CLICK") return;
+      // URL pattern: /channels/:channelId
+      const match = (event.data.url || "").match(/\/channels\/([^/]+)/);
+      if (!match) return;
+      const channelId = match[1];
+
+      // Try to find the channel in the already-loaded list
+      let channel = channels.find((ch) => ch.id === channelId);
+
+      if (!channel) {
+        // Channel might belong to a different server — search across all servers
+        for (const server of servers) {
+          try {
+            const data = await fetchChannels(server.id);
+            const found = (data.channels || []).find((ch) => ch.id === channelId);
+            if (found) {
+              channel = found;
+              selectServer(server);
+              break;
+            }
+          } catch {
+            // ignore per-server errors
+          }
+        }
+      }
+
+      if (channel) selectChannel(channel);
+    };
+
+    navigator.serviceWorker.addEventListener("message", handler);
+    return () => navigator.serviceWorker.removeEventListener("message", handler);
+  }, [channels, servers, selectChannel, selectServer]);
   const [meeting, initMeeting] = useRealtimeKitClient();
   const [meetingKey, setMeetingKey] = useState(0);
   const [error, setError] = useState(null);
@@ -107,7 +150,11 @@ export default function App() {
 
   return (
     <div className="app-layout">
-      <Sidebar onJoinChannel={handleJoinChannel} />
+      <Sidebar
+        onJoinChannel={(ch) => { handleJoinChannel(ch); setSidebarOpen(false); }}
+        open={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
+      />
       <main className="main-content">
         {error && (
           <div className="error-banner">
@@ -125,16 +172,21 @@ export default function App() {
 
         {!activeChannel && !joining && (
           <div className="welcome-screen">
+            <button className="sidebar-hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+              ☰
+            </button>
             <h2>Welcome, {user.username}!</h2>
             <p>Select a channel from the sidebar to get started.</p>
           </div>
         )}
 
-        {activeChannel?.type === "text" && <ChatArea />}
+        {activeChannel?.type === "text" && (
+          <ChatArea onOpenSidebar={() => setSidebarOpen(true)} />
+        )}
 
         {isConnected && meeting && activeChannel?.type === "voice" && (
           <RealtimeKitProvider key={meetingKey} value={meeting}>
-            <VoiceArea meeting={meeting} />
+            <VoiceArea meeting={meeting} onOpenSidebar={() => setSidebarOpen(true)} />
           </RealtimeKitProvider>
         )}
       </main>

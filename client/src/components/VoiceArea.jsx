@@ -9,7 +9,7 @@ import {
   RtkParticipantsAudio,
 } from "@cloudflare/realtimekit-react-ui";
 
-export default function VoiceArea({ meeting }) {
+export default function VoiceArea({ meeting, onOpenSidebar }) {
   const { activeChannel, selectChannel, setIsConnected } = useAppContext();
   const [screenSharer, setScreenSharer] = useState(null);
   const audioEls = useRef(new Map());
@@ -119,6 +119,9 @@ export default function VoiceArea({ meeting }) {
     <div className="voice-area">
       <RtkParticipantsAudio meeting={meeting} />
       <div className="voice-header">
+        <button className="sidebar-hamburger" onClick={onOpenSidebar} aria-label="Open sidebar">
+          ☰
+        </button>
         <span>🔊</span>
         {activeChannel?.name}
       </div>

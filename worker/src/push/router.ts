@@ -6,6 +6,33 @@ const push = new Hono<{ Bindings: Env }>();
 
 push.use("*", authMiddleware);
 
+const MAX_SUBSCRIPTIONS_PER_USER = 5;
+
+// Allowlist of known push service hostnames to prevent SSRF
+const ALLOWED_PUSH_HOSTS = new Set([
+  "fcm.googleapis.com",
+  "updates.push.services.mozilla.com",
+  "updates-autopush.stage.mozaws.net",
+  "notify.windows.com",
+  "web.push.apple.com",
+  "push.apple.com",
+]);
+
+function isAllowedPushEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+    // Exact match or subdomain match against the allowlist
+    for (const allowed of ALLOWED_PUSH_HOSTS) {
+      if (host === allowed || host.endsWith(`.${allowed}`)) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Save a push subscription
 push.post("/push/subscribe", async (c) => {
   const userId = c.get("userId");
@@ -16,6 +43,31 @@ push.post("/push/subscribe", async (c) => {
 
   if (!endpoint || !keys?.p256dh || !keys?.auth) {
     return c.json({ error: "Invalid subscription" }, 400);
+  }
+
+  // Validate key formats (base64url, expected byte lengths: p256dh=65 bytes uncompressed, auth=16 bytes)
+  if (!/^[A-Za-z0-9_-]+$/.test(keys.p256dh) || !/^[A-Za-z0-9_-]+$/.test(keys.auth)) {
+    return c.json({ error: "Invalid key format" }, 400);
+  }
+
+  // SSRF protection: only allow known push service endpoints
+  if (!isAllowedPushEndpoint(endpoint)) {
+    return c.json({ error: "Invalid endpoint" }, 400);
+  }
+
+  // Cap subscriptions per user to prevent DoS fan-out
+  const { results: existing } = await c.env.DB.prepare(
+    "SELECT id FROM push_subscriptions WHERE user_id = ?"
+  )
+    .bind(userId)
+    .all<{ id: string }>();
+
+  if (existing.length >= MAX_SUBSCRIPTIONS_PER_USER) {
+    // Delete the oldest subscription to make room
+    const oldest = existing[0];
+    await c.env.DB.prepare("DELETE FROM push_subscriptions WHERE id = ?")
+      .bind(oldest.id)
+      .run();
   }
 
   await c.env.DB.prepare(

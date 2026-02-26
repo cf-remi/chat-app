@@ -9,6 +9,7 @@ export interface Env {
   RTK_PRESET_NAME: string;
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;
+  VAPID_CONTACT: string;
 }
 
 export interface User {

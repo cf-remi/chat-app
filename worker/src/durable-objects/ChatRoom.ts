@@ -8,10 +8,8 @@ function encodeTags(userId: string, username: string): string[] {
   return [`${userId}:${username}`];
 }
 
-function decodeTags(ws: WebSocket): { userId: string; username: string } {
-  const tags = (ws as any).deserializeAttachment?.() ?? {};
-  // Tags are set via acceptWebSocket's second argument
-  const tagList: string[] = (ws as any).getTags?.() ?? [];
+function decodeTags(state: DurableObjectState, ws: WebSocket): { userId: string; username: string } {
+  const tagList: string[] = state.getTags(ws);
   const tag = tagList[0] || "";
   const idx = tag.indexOf(":");
   return {
@@ -75,7 +73,7 @@ export class ChatRoom implements DurableObject {
     try {
       const raw = typeof message === "string" ? message : new TextDecoder().decode(message);
       const data = JSON.parse(raw);
-      const { userId, username } = decodeTags(ws);
+      const { userId, username } = decodeTags(this.state, ws);
 
       if (data.type === "message") {
         if (typeof data.content !== "string" || !data.content.trim()) {
@@ -113,7 +111,7 @@ export class ChatRoom implements DurableObject {
 
   // Called by the runtime when a WebSocket connection closes
   async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
-    const { username } = decodeTags(ws);
+    const { username } = decodeTags(this.state, ws);
     ws.close(code, "Durable Object is closing WebSocket");
 
     if (username) {
@@ -150,7 +148,7 @@ export class ChatRoom implements DurableObject {
     const sockets = this.state.getWebSockets();
     const ids = new Set<string>();
     for (const ws of sockets) {
-      const { userId } = decodeTags(ws);
+      const { userId } = decodeTags(this.state, ws);
       if (userId) ids.add(userId);
     }
     return ids;
@@ -177,11 +175,13 @@ export class ChatRoom implements DurableObject {
     const onlineUserIds = this.getOnlineUserIds();
 
     // Get push subscriptions for server members who are NOT online
-    const placeholders = onlineUserIds.size > 0
-      ? ` AND ps.user_id NOT IN (${[...onlineUserIds].map(() => "?").join(",")})`
+    const onlineList = [...onlineUserIds];
+    const placeholders = onlineList.length > 0
+      ? ` AND ps.user_id NOT IN (${onlineList.map(() => "?").join(",")})`
       : "";
 
-    const binds = [channel.server_id, ...(onlineUserIds.size > 0 ? [...onlineUserIds] : [])];
+    // Binds: server_id (JOIN), sender userId (exclude sender), ...onlineUserIds (exclude online)
+    const binds: string[] = [channel.server_id, msg.userId, ...onlineList];
 
     const { results } = await this.env.DB.prepare(
       `SELECT ps.endpoint, ps.p256dh, ps.auth, ps.id
@@ -189,7 +189,7 @@ export class ChatRoom implements DurableObject {
        JOIN server_members sm ON sm.user_id = ps.user_id AND sm.server_id = ?
        WHERE ps.user_id != ?${placeholders}`
     )
-      .bind(...[channel.server_id, msg.userId, ...binds.slice(1)])
+      .bind(...binds)
       .all<{ endpoint: string; p256dh: string; auth: string; id: string }>();
 
     if (!results?.length) return;
@@ -198,7 +198,7 @@ export class ChatRoom implements DurableObject {
       title: `${msg.username}`,
       body: msg.content.length > 100 ? msg.content.slice(0, 100) + "..." : msg.content,
       tag: `channel-${msg.channelId}`,
-      url: "/",
+      url: `/channels/${msg.channelId}`,
       channelId: msg.channelId,
     };
 
@@ -210,7 +210,8 @@ export class ChatRoom implements DurableObject {
           { endpoint: sub.endpoint, p256dh: sub.p256dh, auth: sub.auth },
           payload,
           this.env.VAPID_PUBLIC_KEY,
-          this.env.VAPID_PRIVATE_KEY
+          this.env.VAPID_PRIVATE_KEY,
+          this.env.VAPID_CONTACT
         );
         if (!ok) expiredIds.push(sub.id);
       })

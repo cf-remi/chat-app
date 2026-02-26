@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { useAppContext } from "../context/AppContext.jsx";
+import { useAuth } from "../context/AuthContext.jsx";
 import { useChatRoom } from "../hooks/useChatRoom.js";
 
-export default function ChatArea() {
+export default function ChatArea({ onOpenSidebar }) {
   const { activeChannel } = useAppContext();
+  const { user } = useAuth();
   const { messages, connected, sendMessage } = useChatRoom(activeChannel?.id);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef(null);
@@ -29,6 +31,9 @@ export default function ChatArea() {
   return (
     <div className="chat-area">
       <div className="chat-header">
+        <button className="sidebar-hamburger" onClick={onOpenSidebar} aria-label="Open sidebar">
+          ☰
+        </button>
         <span>#</span>
         {activeChannel?.name}
         {!connected && <span className="connecting-badge">connecting...</span>}
@@ -40,31 +45,44 @@ export default function ChatArea() {
             No messages yet. Say something!
           </div>
         )}
-        {messages.map((msg, idx) => (
-          <div
-            className={`chat-message ${msg.isSystem ? "system-message" : ""}`}
-            key={msg.id || idx}
-          >
-            {!msg.isSystem && (
-              <div className="msg-avatar">
-                {(msg.username || "?").charAt(0).toUpperCase()}
+        {messages.map((msg, idx) => {
+          const isOwn = !msg.isSystem && msg.userId === user?.id;
+          return (
+            <div
+              className={`chat-message ${msg.isSystem ? "system-message" : ""} ${isOwn ? "own" : ""}`}
+              key={msg.id || idx}
+            >
+              {!msg.isSystem && !isOwn && (
+                <div className="msg-avatar">
+                  {(msg.username || "?").charAt(0).toUpperCase()}
+                </div>
+              )}
+              <div className="msg-body">
+                {msg.isSystem ? (
+                  <div className="msg-system">{msg.content}</div>
+                ) : (
+                  <>
+                    {!isOwn && (
+                      <div className="msg-header">
+                        <span className="msg-author">{msg.username || "Unknown"}</span>
+                        <span className="msg-time">{formatTime(msg.timestamp)}</span>
+                      </div>
+                    )}
+                    <div className="msg-text">{msg.content}</div>
+                    {isOwn && (
+                      <div className="msg-time own-time">{formatTime(msg.timestamp)}</div>
+                    )}
+                  </>
+                )}
               </div>
-            )}
-            <div className="msg-body">
-              {msg.isSystem ? (
-                <div className="msg-system">{msg.content}</div>
-              ) : (
-                <>
-                  <div className="msg-header">
-                    <span className="msg-author">{msg.username || "Unknown"}</span>
-                    <span className="msg-time">{formatTime(msg.timestamp)}</span>
-                  </div>
-                  <div className="msg-text">{msg.content}</div>
-                </>
+              {!msg.isSystem && isOwn && (
+                <div className="msg-avatar own-avatar">
+                  {(msg.username || "?").charAt(0).toUpperCase()}
+                </div>
               )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
 

@@ -256,6 +256,9 @@ async function hkdfExtract(salt: Uint8Array, ikm: Uint8Array): Promise<Uint8Arra
 }
 
 async function hkdfExpand(prk: Uint8Array, info: Uint8Array, length: number): Promise<Uint8Array> {
+  if (length > 32) {
+    throw new Error(`hkdfExpand: requested length ${length} exceeds single-block maximum of 32`);
+  }
   const key = await crypto.subtle.importKey("raw", prk, { name: "HMAC", hash: "SHA-256" }, false, [
     "sign",
   ]);
@@ -268,7 +271,8 @@ export async function sendPushNotification(
   subscription: PushSubscription,
   payload: PushPayload,
   vapidPublicKey: string,
-  vapidPrivateKey: string
+  vapidPrivateKey: string,
+  vapidContact: string
 ): Promise<boolean> {
   try {
     const payloadStr = JSON.stringify(payload);
@@ -283,7 +287,7 @@ export async function sendPushNotification(
       subscription.endpoint,
       vapidPublicKey,
       vapidPrivateKey,
-      "mailto:admin@goodshab.com"
+      vapidContact
     );
 
     const response = await fetch(subscription.endpoint, {

@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
+import { unsubscribePush } from "../api.js";
 
 const AuthContext = createContext(null);
 
@@ -46,6 +47,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // Unsubscribe push before clearing session so the authenticated request succeeds
+    try {
+      if ("serviceWorker" in navigator && "PushManager" in window) {
+        const reg = await navigator.serviceWorker.ready;
+        const subscription = await reg.pushManager.getSubscription();
+        if (subscription) {
+          await unsubscribePush(subscription.endpoint);
+          await subscription.unsubscribe();
+        }
+      }
+    } catch {
+      // Best-effort — don't block logout if push unsubscribe fails
+    }
+
     await fetch(`${API}/auth/logout`, {
       method: "POST",
       credentials: "include",

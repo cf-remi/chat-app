@@ -37,3 +37,4 @@ VAPID_PUBLIC_KEY = "BJJq8hMz6WQxmMxspUy_fZLEIOJ--VSnEjQo3jLs9y9nTedhQfSmTs5tkSIv
 # CF_ACCOUNT_ID
 # CF_APP_ID
 # VAPID_PRIVATE_KEY
+# VAPID_CONTACT   (e.g. "mailto:admin@yourdomain.com")
