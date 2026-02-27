@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { authMiddleware } from "../auth/middleware.js";
+import { rateLimit } from "../middleware/rateLimit.js";
 import type { Env } from "../types.js";
 
 const channels = new Hono<{ Bindings: Env }>();
@@ -11,7 +12,7 @@ channels.get("/servers", async (c) => {
   const userId = c.get("userId");
 
   const { results } = await c.env.DB.prepare(
-    `SELECT s.id, s.name, s.owner_id, s.invite_code, s.created_at, sm.role
+    `SELECT s.id, s.name, s.owner_id, s.invite_code, s.is_public, s.created_at, sm.role
      FROM servers s
      JOIN server_members sm ON sm.server_id = s.id
      WHERE sm.user_id = ?
@@ -43,7 +44,10 @@ channels.get("/servers/browse", async (c) => {
 });
 
 // Join a server by invite code
-channels.post("/servers/join-by-invite", async (c) => {
+channels.post(
+  "/servers/join-by-invite",
+  rateLimit({ prefix: "join-invite", limit: 10, windowSeconds: 60 }),
+  async (c) => {
   const userId = c.get("userId");
   const { inviteCode } = await c.req.json<{ inviteCode: string }>();
 
@@ -79,8 +83,12 @@ channels.post("/servers", async (c) => {
     return c.json({ error: "Server name is required" }, 400);
   }
 
+  if (name.trim().length > 100) {
+    return c.json({ error: "Server name must be at most 100 characters" }, 400);
+  }
+
   const server = await c.env.DB.prepare(
-    "INSERT INTO servers (name, owner_id, invite_code) VALUES (?, ?, substr(lower(hex(randomblob(4))),1,8)) RETURNING id, name, owner_id, invite_code, created_at"
+    "INSERT INTO servers (name, owner_id, invite_code) VALUES (?, ?, substr(lower(hex(randomblob(8))),1,16)) RETURNING id, name, owner_id, invite_code, created_at"
   )
     .bind(name.trim(), userId)
     .first();
@@ -145,6 +153,9 @@ channels.post("/servers/:serverId/channels", async (c) => {
   if (!name?.trim()) {
     return c.json({ error: "Channel name is required" }, 400);
   }
+  if (name.trim().length > 100) {
+    return c.json({ error: "Channel name must be at most 100 characters" }, 400);
+  }
   if (!["text", "voice"].includes(type)) {
     return c.json({ error: "Type must be 'text' or 'voice'" }, 400);
   }
@@ -168,6 +179,39 @@ channels.post("/servers/:serverId/channels", async (c) => {
   return c.json({ channel }, 201);
 });
 
+// Toggle server privacy (owner/admin only)
+channels.patch("/servers/:serverId/privacy", async (c) => {
+  const userId = c.get("userId");
+  const serverId = c.req.param("serverId");
+  const { is_public } = await c.req.json<{ is_public: boolean }>();
+
+  if (typeof is_public !== "boolean") {
+    return c.json({ error: "is_public must be a boolean" }, 400);
+  }
+
+  const member = await c.env.DB.prepare(
+    "SELECT role FROM server_members WHERE server_id = ? AND user_id = ?"
+  )
+    .bind(serverId, userId)
+    .first<{ role: string }>();
+
+  if (!member || member.role === "member") {
+    return c.json({ error: "Only owners and admins can change server privacy" }, 403);
+  }
+
+  const server = await c.env.DB.prepare(
+    "UPDATE servers SET is_public = ? WHERE id = ? RETURNING id, is_public"
+  )
+    .bind(is_public ? 1 : 0, serverId)
+    .first<{ id: string; is_public: number }>();
+
+  if (!server) {
+    return c.json({ error: "Server not found" }, 404);
+  }
+
+  return c.json({ is_public: server.is_public === 1 });
+});
+
 // Regenerate invite code (owner/admin only)
 channels.post("/servers/:serverId/regenerate-invite", async (c) => {
   const userId = c.get("userId");
@@ -184,7 +228,7 @@ channels.post("/servers/:serverId/regenerate-invite", async (c) => {
   }
 
   const server = await c.env.DB.prepare(
-    "UPDATE servers SET invite_code = substr(lower(hex(randomblob(4))),1,8) WHERE id = ? RETURNING invite_code"
+    "UPDATE servers SET invite_code = substr(lower(hex(randomblob(8))),1,16) WHERE id = ? RETURNING invite_code"
   )
     .bind(serverId)
     .first<{ invite_code: string }>();

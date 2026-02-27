@@ -11,9 +11,11 @@ export function useChatRoom(channelId) {
   const reconnectTimer = useRef(null);
   const retriesRef = useRef(0);
   const unmountedRef = useRef(false);
+  const channelIdRef = useRef(channelId);
 
   useEffect(() => {
     if (!channelId) return;
+    channelIdRef.current = channelId;
     unmountedRef.current = false;
     retriesRef.current = 0;
 
@@ -22,7 +24,7 @@ export function useChatRoom(channelId) {
 
       let wsUrl;
       if (API_BASE) {
-        const base = API_BASE.replace(/^http/, "ws");
+        const base = API_BASE.replace(/^https:/, "wss:").replace(/^http:/, "ws:");
         wsUrl = `${base}/chat/${channelId}`;
       } else {
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -38,6 +40,8 @@ export function useChatRoom(channelId) {
       });
 
       ws.addEventListener("message", (event) => {
+        // Drop messages from a stale WebSocket (channel switched before this event fired)
+        if (unmountedRef.current || channelIdRef.current !== channelId) return;
         try {
           const data = JSON.parse(event.data);
 
@@ -96,7 +100,7 @@ export function useChatRoom(channelId) {
   }, [channelId]);
 
   const sendMessage = useCallback(
-    (content) => {
+    (content, attachments) => {
       if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
       wsRef.current.send(
@@ -104,6 +108,7 @@ export function useChatRoom(channelId) {
           type: "message",
           channelId,
           content,
+          ...(attachments?.length ? { attachments } : {}),
         })
       );
     },

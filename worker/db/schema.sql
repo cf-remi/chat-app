@@ -2,11 +2,23 @@ CREATE TABLE IF NOT EXISTS users (
   id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   username   TEXT NOT NULL UNIQUE,
   email      TEXT NOT NULL UNIQUE,
-  pw_hash    TEXT NOT NULL,
-  pw_salt    TEXT NOT NULL,
+  pw_hash    TEXT NOT NULL DEFAULT '',
+  pw_salt    TEXT NOT NULL DEFAULT '',
   avatar_url TEXT,
   created_at INTEGER DEFAULT (unixepoch())
 );
+
+-- OAuth accounts linked to users (one user can have multiple OAuth providers)
+CREATE TABLE IF NOT EXISTS oauth_accounts (
+  id               TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id          TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider         TEXT NOT NULL CHECK (provider IN ('google', 'apple')),
+  provider_user_id TEXT NOT NULL,
+  created_at       INTEGER DEFAULT (unixepoch()),
+  UNIQUE (provider, provider_user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_oauth_accounts_user_id ON oauth_accounts(user_id);
 
 CREATE TABLE IF NOT EXISTS servers (
   id          TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
@@ -48,3 +60,18 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 );
 
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user_id ON push_subscriptions(user_id);
+
+CREATE TABLE IF NOT EXISTS files (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  channel_id   TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  r2_key       TEXT NOT NULL UNIQUE,
+  filename     TEXT NOT NULL,
+  content_type TEXT NOT NULL,
+  size         INTEGER NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'ready')),
+  created_at   INTEGER DEFAULT (unixepoch())
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_channel_id ON files(channel_id);
+CREATE INDEX IF NOT EXISTS idx_files_user_id ON files(user_id);

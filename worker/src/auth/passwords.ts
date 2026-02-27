@@ -46,6 +46,9 @@ export async function verifyPassword(
   storedHash: string,
   storedSalt: string
 ): Promise<boolean> {
+  // OAuth-only accounts have empty pw_hash/pw_salt — always reject password login
+  if (!storedHash || !storedSalt) return false;
+
   const salt = hexToBuf(storedSalt);
   const derived = await deriveKey(password, salt);
   const derivedBuf = new Uint8Array(derived);

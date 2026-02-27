@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useMemo } from "react";
 import { useAuth } from "./AuthContext.jsx";
 import { fetchServers, fetchChannels } from "../api.js";
 
@@ -11,6 +11,7 @@ export function AppProvider({ children }) {
   const [channels, setChannels] = useState([]);
   const [activeChannel, setActiveChannel] = useState(null);
   const [isConnected, setIsConnected] = useState(false);
+  const [connectedVoiceChannel, setConnectedVoiceChannel] = useState(null);
 
   // Fetch servers when logged in
   useEffect(() => {
@@ -19,6 +20,8 @@ export function AppProvider({ children }) {
       setActiveServer(null);
       setChannels([]);
       setActiveChannel(null);
+      setIsConnected(false);
+      setConnectedVoiceChannel(null);
       return;
     }
     fetchServers()
@@ -45,18 +48,26 @@ export function AppProvider({ children }) {
   const selectServer = useCallback((server) => {
     setActiveServer(server);
     setActiveChannel(null);
-    setIsConnected(false);
+    // NOTE: Do NOT reset isConnected here — App.jsx handles voice cleanup
+    // when it detects the server changed while in a call.
   }, []);
 
   const selectChannel = useCallback((channel) => {
     setActiveChannel(channel);
-    setIsConnected(false);
+    // NOTE: Do NOT reset isConnected here — the user can stay in voice
+    // while browsing text channels.
   }, []);
 
   const refreshServers = useCallback(async () => {
     const data = await fetchServers();
-    setServers(data.servers || []);
-    return data.servers;
+    const list = data.servers || [];
+    setServers(list);
+    // Sync activeServer with fresh data so fields like is_public stay current
+    setActiveServer((prev) => {
+      if (!prev) return prev;
+      return list.find((s) => s.id === prev.id) || prev;
+    });
+    return list;
   }, []);
 
   const refreshChannels = useCallback(async () => {
@@ -65,26 +76,44 @@ export function AppProvider({ children }) {
     setChannels(data.channels || []);
   }, [activeServer]);
 
-  const textChannels = channels.filter((ch) => ch.type === "text");
-  const voiceChannels = channels.filter((ch) => ch.type === "voice");
+  const textChannels = useMemo(() => channels.filter((ch) => ch.type === "text"), [channels]);
+  const voiceChannels = useMemo(() => channels.filter((ch) => ch.type === "voice"), [channels]);
+
+  const value = useMemo(
+    () => ({
+      servers,
+      activeServer,
+      selectServer,
+      channels,
+      textChannels,
+      voiceChannels,
+      activeChannel,
+      selectChannel,
+      isConnected,
+      setIsConnected,
+      connectedVoiceChannel,
+      setConnectedVoiceChannel,
+      refreshServers,
+      refreshChannels,
+    }),
+    [
+      servers,
+      activeServer,
+      selectServer,
+      channels,
+      textChannels,
+      voiceChannels,
+      activeChannel,
+      selectChannel,
+      isConnected,
+      connectedVoiceChannel,
+      refreshServers,
+      refreshChannels,
+    ]
+  );
 
   return (
-    <AppContext.Provider
-      value={{
-        servers,
-        activeServer,
-        selectServer,
-        channels,
-        textChannels,
-        voiceChannels,
-        activeChannel,
-        selectChannel,
-        isConnected,
-        setIsConnected,
-        refreshServers,
-        refreshChannels,
-      }}
-    >
+    <AppContext.Provider value={value}>
       {children}
     </AppContext.Provider>
   );

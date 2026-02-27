@@ -27,7 +27,7 @@ export function AuthProvider({ children }) {
       credentials: "include",
       body: JSON.stringify({ username, email, password }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Registration failed");
     setUser(data.user);
     return data.user;
@@ -40,7 +40,7 @@ export function AuthProvider({ children }) {
       credentials: "include",
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "Login failed");
     setUser(data.user);
     return data.user;
@@ -69,7 +69,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

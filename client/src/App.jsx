@@ -16,8 +16,11 @@ export default function App() {
   const { user, loading } = useAuth();
   const {
     activeChannel,
+    activeServer,
     isConnected,
     setIsConnected,
+    connectedVoiceChannel,
+    setConnectedVoiceChannel,
     selectChannel,
     servers,
     selectServer,
@@ -71,13 +74,67 @@ export default function App() {
   const [joining, setJoining] = useState(false);
   const joiningRef = useRef(false);
   const meetingRef = useRef(null);
+  const meetingListenerCleanupRef = useRef(null);
+
+  const cleanupMeetingListeners = useCallback(() => {
+    if (meetingListenerCleanupRef.current) {
+      try {
+        meetingListenerCleanupRef.current();
+      } catch {}
+      meetingListenerCleanupRef.current = null;
+    }
+  }, []);
+
+  // Leave voice cleanly — used by multiple paths
+  const leaveVoice = useCallback(async () => {
+    if (meetingRef.current) {
+      cleanupMeetingListeners();
+      try {
+        await meetingRef.current.leaveRoom();
+      } catch (e) {
+        // ignore leave errors
+      }
+      meetingRef.current = null;
+    }
+    setIsConnected(false);
+    setConnectedVoiceChannel(null);
+  }, [cleanupMeetingListeners, setIsConnected, setConnectedVoiceChannel]);
+
+  // Leave voice when switching to a different server
+  const prevServerRef = useRef(activeServer?.id);
+  useEffect(() => {
+    if (activeServer?.id !== prevServerRef.current) {
+      prevServerRef.current = activeServer?.id;
+      if (isConnected) {
+        leaveVoice();
+      }
+    }
+  }, [activeServer, isConnected, leaveVoice]);
+
+  // Cleanup meeting on unmount
+  useEffect(() => {
+    return () => {
+      if (meetingRef.current) {
+        cleanupMeetingListeners();
+        try { meetingRef.current.leaveRoom(); } catch {}
+        meetingRef.current = null;
+      }
+    };
+  }, [cleanupMeetingListeners]);
 
   const handleJoinChannel = useCallback(
     async (channel) => {
       if (!user || !channel || joiningRef.current) return;
 
-      // For text channels, just select — the WebSocket hook handles the rest
+      // For text channels, just select — the WebSocket hook handles the rest.
+      // Voice stays connected in the background.
       if (channel.type === "text") {
+        selectChannel(channel);
+        return;
+      }
+
+      // If clicking the voice channel we're already connected to, just view it
+      if (isConnected && connectedVoiceChannel?.id === channel.id) {
         selectChannel(channel);
         return;
       }
@@ -89,42 +146,142 @@ export default function App() {
 
       // Leave any existing meeting first
       if (meetingRef.current) {
+        cleanupMeetingListeners();
         try {
           await meetingRef.current.leaveRoom();
         } catch (e) {
           // ignore leave errors
         }
         meetingRef.current = null;
+        setIsConnected(false);
+        setConnectedVoiceChannel(null);
       }
 
       selectChannel(channel);
 
       try {
-        const { authToken } = await joinVoiceRoom(channel.id);
+        // Fetch token, auto-retry once on 409 (expired meeting)
+        let joinData;
+        try {
+          joinData = await joinVoiceRoom(channel.id);
+        } catch (err) {
+          if (err.message?.includes("Meeting expired")) {
+            joinData = await joinVoiceRoom(channel.id);
+          } else {
+            throw err;
+          }
+        }
+
+        const { authToken } = joinData;
+
+        if (!authToken) {
+          throw new Error("No auth token received from server");
+        }
+
+        const isMobile =
+          typeof window !== "undefined" &&
+          (window.matchMedia("(max-width: 768px)").matches || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+
+        const mobilePortraitVideoConstraints = {
+          width: { ideal: 720 },
+          height: { ideal: 1280 },
+          frameRate: { ideal: 24 },
+        };
+
+        const desktopLandscapeVideoConstraints = {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 24 },
+        };
 
         const mtg = await initMeeting({
           authToken,
           defaults: {
-            audio: true,
+            audio: false,
             video: false,
+            mediaConfiguration: {
+              video: isMobile ? mobilePortraitVideoConstraints : desktopLandscapeVideoConstraints,
+            },
           },
         });
 
+        // Add a long-lived roomLeft listener to keep global state in sync
+        const onUnexpectedLeave = ({ reason }) => {
+          console.warn("[RTK] Left room:", reason);
+          setIsConnected(false);
+          setConnectedVoiceChannel(null);
+          meetingRef.current = null;
+        };
+        mtg.self.on("roomLeft", onUnexpectedLeave);
+
+        // Mobile-first: whenever camera is enabled on mobile, re-apply portrait constraints.
+        if (isMobile) {
+          const applyPortrait = async () => {
+            try {
+              await mtg.self.updateVideoConstraints(mobilePortraitVideoConstraints);
+            } catch (e) {
+              console.warn("Failed to apply portrait video constraints:", e);
+            }
+          };
+
+          const onVideoUpdate = ({ videoEnabled }) => {
+            if (videoEnabled) {
+              void applyPortrait();
+            }
+          };
+
+          mtg.self.on("videoUpdate", onVideoUpdate);
+          meetingListenerCleanupRef.current = () => {
+            mtg.self.removeListener("videoUpdate", onVideoUpdate);
+          };
+        } else {
+          meetingListenerCleanupRef.current = null;
+        }
+
         await new Promise((resolve, reject) => {
           const timeout = setTimeout(
-            () => reject(new Error("Join timed out")),
+            () => reject(new Error("Join timed out — check browser console and network tab for details")),
             15000
           );
-          mtg.self.on("roomJoined", () => {
+
+          const onRoomLeft = ({ reason }) => {
+            console.error("[RTK] roomLeft:", reason);
             clearTimeout(timeout);
+            cleanup();
+            reject(new Error(`Room left during join: ${reason}`));
+          };
+          const onMediaError = (err) => {
+            console.error("[RTK] mediaPermissionError:", err);
+          };
+          const onRoomJoined = () => {
+            clearTimeout(timeout);
+            cleanup();
             resolve();
+          };
+
+          // Attach listeners
+          mtg.self.on("roomLeft", onRoomLeft);
+          mtg.self.on("mediaPermissionError", onMediaError);
+          mtg.self.on("roomJoined", onRoomJoined);
+
+          // Remove listeners after settlement to prevent leaks
+          function cleanup() {
+            mtg.self.removeListener("roomLeft", onRoomLeft);
+            mtg.self.removeListener("mediaPermissionError", onMediaError);
+            mtg.self.removeListener("roomJoined", onRoomJoined);
+          }
+
+          mtg.join().catch((err) => {
+            clearTimeout(timeout);
+            cleanup();
+            reject(new Error(`join() rejected: ${err.message}`));
           });
-          mtg.join();
         });
 
         meetingRef.current = mtg;
         setMeetingKey((k) => k + 1);
         setIsConnected(true);
+        setConnectedVoiceChannel(channel);
       } catch (err) {
         console.error("Failed to join voice channel:", err);
         setError(err.message);
@@ -133,7 +290,16 @@ export default function App() {
         joiningRef.current = false;
       }
     },
-    [user, initMeeting, setIsConnected, selectChannel]
+    [
+      user,
+      initMeeting,
+      setIsConnected,
+      setConnectedVoiceChannel,
+      selectChannel,
+      isConnected,
+      connectedVoiceChannel,
+      cleanupMeetingListeners,
+    ]
   );
 
   if (loading) {
@@ -181,12 +347,29 @@ export default function App() {
         )}
 
         {activeChannel?.type === "text" && (
-          <ChatArea onOpenSidebar={() => setSidebarOpen(true)} />
+          <ChatArea key={activeChannel.id} onOpenSidebar={() => setSidebarOpen(true)} />
         )}
 
-        {isConnected && meeting && activeChannel?.type === "voice" && (
+        {activeChannel?.type === "voice" && !isConnected && !joining && (
+          <div className="welcome-screen">
+            <button className="sidebar-hamburger" onClick={() => setSidebarOpen(true)} aria-label="Open sidebar">
+              ☰
+            </button>
+            <h2>#{activeChannel.name}</h2>
+            <p>Click "Join" in the sidebar to connect to this voice channel.</p>
+          </div>
+        )}
+
+        {isConnected && meeting && (
           <RealtimeKitProvider key={meetingKey} value={meeting}>
-            <VoiceArea meeting={meeting} onOpenSidebar={() => setSidebarOpen(true)} />
+            <VoiceArea
+              meeting={meeting}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              minimized={activeChannel?.id !== connectedVoiceChannel?.id}
+              channelName={connectedVoiceChannel?.name || "Voice"}
+              onLeave={leaveVoice}
+              onExpand={() => connectedVoiceChannel && selectChannel(connectedVoiceChannel)}
+            />
           </RealtimeKitProvider>
         )}
       </main>

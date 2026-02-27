@@ -10,7 +10,12 @@ rtk.use("*", authMiddleware);
 rtk.post("/rooms/join", async (c) => {
   const userId = c.get("userId");
   const username = c.get("username");
-  const { channelId } = await c.req.json<{ channelId: string }>();
+  let channelId: string;
+  try {
+    ({ channelId } = await c.req.json<{ channelId: string }>());
+  } catch {
+    return c.json({ error: "Invalid request body" }, 400);
+  }
 
   if (!channelId) {
     return c.json({ error: "channelId is required" }, 400);
@@ -87,7 +92,8 @@ rtk.post("/rooms/join", async (c) => {
   const authToken = participantData.result?.token ?? participantData.data?.token;
 
   if (!authToken) {
-    return c.json({ error: "No auth token returned" }, 500);
+    console.error("RTK participant response missing token:", JSON.stringify(participantData));
+    return c.json({ error: "No auth token returned from RTK" }, 500);
   }
 
   return c.json({ authToken, meetingId });

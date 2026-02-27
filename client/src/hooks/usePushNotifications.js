@@ -5,7 +5,12 @@ export function usePushNotifications(user) {
   const subscribedRef = useRef(false);
 
   useEffect(() => {
-    if (!user || subscribedRef.current) return;
+    if (!user) {
+      // Reset so we re-subscribe on next login
+      subscribedRef.current = false;
+      return;
+    }
+    if (subscribedRef.current) return;
     if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
 
     async function setup() {

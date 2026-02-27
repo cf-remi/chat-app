@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useAppContext } from "../context/AppContext.jsx";
+import { useState, useEffect } from "react";
 import {
   RtkGrid,
   RtkMicToggle,
@@ -9,68 +8,15 @@ import {
   RtkParticipantsAudio,
 } from "@cloudflare/realtimekit-react-ui";
 
-export default function VoiceArea({ meeting, onOpenSidebar }) {
-  const { activeChannel, selectChannel, setIsConnected } = useAppContext();
+export default function VoiceArea({
+  meeting,
+  onOpenSidebar,
+  minimized = false,
+  channelName = "Voice",
+  onLeave,
+  onExpand,
+}) {
   const [screenSharer, setScreenSharer] = useState(null);
-  const audioEls = useRef(new Map());
-
-  // Manual audio playback for Firefox autoplay policy
-  useEffect(() => {
-    if (!meeting) return;
-
-    function playParticipantAudio(participant) {
-      const track = participant.audioTrack;
-      if (!track) return;
-
-      let el = audioEls.current.get(participant.id);
-      if (!el) {
-        el = document.createElement("audio");
-        el.autoplay = true;
-        el.id = `audio-${participant.id}`;
-        audioEls.current.set(participant.id, el);
-      }
-
-      const stream = new MediaStream([track]);
-      el.srcObject = stream;
-      el.play().catch(() => {});
-    }
-
-    function removeParticipantAudio(participant) {
-      const el = audioEls.current.get(participant.id);
-      if (el) {
-        el.srcObject = null;
-        audioEls.current.delete(participant.id);
-      }
-    }
-
-    function handleAudioUpdate(participant) {
-      if (participant.audioEnabled && participant.audioTrack) {
-        playParticipantAudio(participant);
-      } else {
-        const el = audioEls.current.get(participant.id);
-        if (el) el.srcObject = null;
-      }
-    }
-
-    // Play audio for participants already in the room
-    meeting.participants.joined.forEach((p) => {
-      if (p.audioEnabled && p.audioTrack) playParticipantAudio(p);
-    });
-
-    meeting.participants.joined.on("participantJoined", (p) => {
-      if (p.audioEnabled && p.audioTrack) playParticipantAudio(p);
-    });
-    meeting.participants.joined.on("audioUpdate", handleAudioUpdate);
-    meeting.participants.joined.on("participantLeft", removeParticipantAudio);
-
-    return () => {
-      meeting.participants.joined.off("participantJoined", playParticipantAudio);
-      meeting.participants.joined.off("audioUpdate", handleAudioUpdate);
-      meeting.participants.joined.off("participantLeft", removeParticipantAudio);
-      audioEls.current.forEach((el) => { el.srcObject = null; });
-      audioEls.current.clear();
-    };
-  }, [meeting]);
 
   useEffect(() => {
     if (!meeting) return;
@@ -103,27 +49,39 @@ export default function VoiceArea({ meeting, onOpenSidebar }) {
     };
   }, [meeting]);
 
-  const handleLeave = async () => {
-    try {
-      if (meeting) {
-        await meeting.leaveRoom();
-      }
-    } catch (err) {
-      console.error("Error leaving room:", err);
-    }
-    setIsConnected(false);
-    selectChannel(null);
+  const handleLeave = () => {
+    if (onLeave) onLeave();
   };
 
+  // Minimized floating bar — audio keeps playing, user can disconnect or expand
+  if (minimized) {
+    return (
+      <div className="voice-bar-minimized">
+        <RtkParticipantsAudio meeting={meeting} />
+        <div className="voice-bar-info" onClick={onExpand} role="button" tabIndex={0}>
+          <span className="voice-bar-icon">&#x1F50A;</span>
+          <span className="voice-bar-channel">#{channelName}</span>
+        </div>
+        <div className="voice-bar-controls">
+          <RtkMicToggle meeting={meeting} size="sm" />
+          <button className="leave-btn leave-btn-sm" onClick={handleLeave}>
+            Disconnect
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Full voice UI
   return (
     <div className="voice-area">
       <RtkParticipantsAudio meeting={meeting} />
       <div className="voice-header">
         <button className="sidebar-hamburger" onClick={onOpenSidebar} aria-label="Open sidebar">
-          ☰
+          &#x2630;
         </button>
-        <span>🔊</span>
-        {activeChannel?.name}
+        <span>&#x1F50A;</span>
+        {channelName}
       </div>
 
       <div className="voice-content">

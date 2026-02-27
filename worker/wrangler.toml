@@ -27,14 +27,34 @@ binding = "DB"
 database_name = "chat-app"
 database_id = "056c32c5-3e6d-4375-92aa-4226275f0c97"
 
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "chat-app-files"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "5a13995a97324bd9b35a0c96f2811319"
+
 [vars]
 RTK_PRESET_NAME = "group_call_host"
 VAPID_PUBLIC_KEY = "BJJq8hMz6WQxmMxspUy_fZLEIOJ--VSnEjQo3jLs9y9nTedhQfSmTs5tkSIvFf03lBHbFTBaIga14EfWGH04SF8"
+R2_ACCOUNT_ID = "f14987cb2f1db42ebfde241a23700328"
+R2_BUCKET_NAME = "chat-app-files"
 
-# Secrets (set via `wrangler secret put <NAME>`):
+# Secrets (set via `wrangler secret put <NAME>` from the worker/ directory):
 # JWT_SECRET
 # CF_API_TOKEN
 # CF_ACCOUNT_ID
 # CF_APP_ID
 # VAPID_PRIVATE_KEY
-# VAPID_CONTACT   (e.g. "mailto:admin@yourdomain.com")
+# VAPID_CONTACT        (e.g. "mailto:admin@yourdomain.com")
+# R2_ACCESS_KEY_ID     (R2 S3-compatible API token Access Key ID)
+# R2_SECRET_ACCESS_KEY (R2 S3-compatible API token Secret)
+# --- Google OAuth ---
+# GOOGLE_CLIENT_ID
+# GOOGLE_CLIENT_SECRET
+# --- Apple OAuth ---
+# APPLE_CLIENT_ID      (your Services ID, e.g. "com.example.chat.web")
+# APPLE_TEAM_ID
+# APPLE_KEY_ID
+# APPLE_PRIVATE_KEY    (contents of your .p8 key file; replace actual newlines with \n)

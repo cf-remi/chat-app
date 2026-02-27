@@ -2,6 +2,8 @@ export interface Env {
   DB: D1Database;
   CHAT_ROOM: DurableObjectNamespace;
   ASSETS: Fetcher;
+  FILES: R2Bucket;
+  RATE_LIMIT: KVNamespace;
   JWT_SECRET: string;
   CF_ACCOUNT_ID: string;
   CF_API_TOKEN: string;
@@ -10,6 +12,18 @@ export interface Env {
   VAPID_PUBLIC_KEY: string;
   VAPID_PRIVATE_KEY: string;
   VAPID_CONTACT: string;
+  R2_ACCOUNT_ID: string;
+  R2_BUCKET_NAME: string;
+  R2_ACCESS_KEY_ID: string;
+  R2_SECRET_ACCESS_KEY: string;
+  // Google OAuth (optional — checked at runtime)
+  GOOGLE_CLIENT_ID: string;
+  GOOGLE_CLIENT_SECRET: string;
+  // Apple OAuth (optional — checked at runtime)
+  APPLE_CLIENT_ID: string;
+  APPLE_TEAM_ID: string;
+  APPLE_KEY_ID: string;
+  APPLE_PRIVATE_KEY: string;
 }
 
 export interface User {
@@ -52,6 +66,13 @@ export interface JwtPayload {
   exp: number;
 }
 
+export interface FileAttachment {
+  fileId: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
 export interface ChatMessage {
   id: string;
   channelId: string;
@@ -59,4 +80,5 @@ export interface ChatMessage {
   username: string;
   content: string;
   timestamp: number;
+  attachments?: FileAttachment[];
 }

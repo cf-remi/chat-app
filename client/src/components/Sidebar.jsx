@@ -10,6 +10,7 @@ import {
   fetchMembers,
   deleteChannel as apiDeleteChannel,
   deleteServer as apiDeleteServer,
+  setServerPrivacy,
 } from "../api.js";
 import ServerBrowser from "./ServerBrowser.jsx";
 
@@ -21,6 +22,7 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
     textChannels,
     voiceChannels,
     activeChannel,
+    connectedVoiceChannel,
     refreshServers,
     refreshChannels,
   } = useAppContext();
@@ -71,7 +73,7 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
   const handleRegenerateInvite = async () => {
     setAdminError("");
     try {
-      const data = await regenerateInvite(activeServer.id);
+      await regenerateInvite(activeServer.id);
       await refreshServers();
       setAdminError("");
     } catch (err) {
@@ -80,6 +82,7 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
   };
 
   const handleRevokeInvite = async () => {
+    if (!confirm("Revoke the invite code? Existing members will not be affected, but the code will no longer work.")) return;
     setAdminError("");
     try {
       await revokeInvite(activeServer.id);
@@ -89,7 +92,8 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
     }
   };
 
-  const handleKick = async (targetUserId) => {
+  const handleKick = async (targetUserId, targetUsername) => {
+    if (!confirm(`Kick ${targetUsername} from this server?`)) return;
     setAdminError("");
     try {
       await kickMember(activeServer.id, targetUserId);
@@ -151,6 +155,17 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
     setChannelCreateError("");
   };
 
+  const handleTogglePrivacy = async () => {
+    if (!activeServer) return;
+    setAdminError("");
+    try {
+      await setServerPrivacy(activeServer.id, !activeServer.is_public);
+      await refreshServers();
+    } catch (err) {
+      setAdminError(err.message);
+    }
+  };
+
   return (
     <>
       {open && <div className="sidebar-backdrop" onClick={onClose} aria-hidden="true" />}
@@ -172,14 +187,18 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
           onClick={() => setShowCreate(!showCreate)}
           title="Create Server"
         >
-          +
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
         </div>
         <div
           className="server-pill browse-server"
           onClick={() => setShowBrowser(true)}
           title="Browse / Join Server"
         >
-          ⌕
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="11" cy="11" r="6" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+          </svg>
         </div>
       </div>
 
@@ -237,6 +256,27 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
             </div>
 
             <div className="admin-section">
+              <div className="admin-section-title">Privacy</div>
+              <div className="privacy-row">
+                <span className="privacy-label">
+                  {activeServer.is_public ? "Public" : "Private"}
+                  <span className="privacy-hint">
+                    {activeServer.is_public
+                      ? "Anyone can find and join this server"
+                      : "Only members with an invite code can join"}
+                  </span>
+                </span>
+                <button
+                  className={`privacy-toggle ${activeServer.is_public ? "public" : "private"}`}
+                  onClick={handleTogglePrivacy}
+                  title={activeServer.is_public ? "Make private" : "Make public"}
+                >
+                  {activeServer.is_public ? "Public" : "Private"}
+                </button>
+              </div>
+            </div>
+
+            <div className="admin-section">
               <div className="admin-section-title">Members ({members.length})</div>
               <ul className="member-list">
                 {members.map((m) => (
@@ -248,7 +288,7 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
                       )}
                     </span>
                     {m.role !== "owner" && (isOwner || (isAdmin && m.role === "member")) && m.id !== user.id && (
-                      <button className="kick-btn" onClick={() => handleKick(m.id)} title="Kick">
+                      <button className="kick-btn" onClick={() => handleKick(m.id, m.username)} title="Kick">
                         ✕
                       </button>
                     )}
@@ -369,11 +409,14 @@ export default function Sidebar({ onJoinChannel, open, onClose }) {
                   {voiceChannels.map((ch) => (
                     <li
                       key={ch.id}
-                      className={`channel-item ${activeChannel?.id === ch.id ? "active" : ""}`}
+                      className={`channel-item ${activeChannel?.id === ch.id ? "active" : ""}${connectedVoiceChannel?.id === ch.id ? " voice-connected" : ""}`}
                       onClick={() => onJoinChannel(ch)}
                     >
                       <span className="channel-icon">🔊</span>
                       <span style={{ flex: 1 }}>{ch.name}</span>
+                      {connectedVoiceChannel?.id === ch.id && (
+                        <span className="voice-connected-badge" title="Connected">&#x25CF;</span>
+                      )}
                       {isAdmin && (
                         <button
                           className="channel-delete-btn"

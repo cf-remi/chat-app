@@ -57,7 +57,7 @@ push.post("/push/subscribe", async (c) => {
 
   // Cap subscriptions per user to prevent DoS fan-out
   const { results: existing } = await c.env.DB.prepare(
-    "SELECT id FROM push_subscriptions WHERE user_id = ?"
+    "SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY created_at ASC"
   )
     .bind(userId)
     .all<{ id: string }>();
